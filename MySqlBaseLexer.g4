@@ -900,7 +900,7 @@ POLYGON:                             P O L Y G O N;
 
 // Common function names
 
-ABS:                                 A B S ;
+ABS:                                 A B S;
 ACOS:                                A C O S;
 ADDDATE:                             A D D D A T E;
 ADDTIME:                             A D D T I M E;

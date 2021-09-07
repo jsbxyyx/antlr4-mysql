@@ -26,6 +26,11 @@ class MySqlBase:
         parser = MySqlBaseParser(stream)
         return parser
 
+    @classmethod
+    def parserSQLStatement(cls, sql):
+        parser = cls.parser(sql)
+        return parser.sqlStatements().sqlStatement()
+
 
 class LockClause:
     def __init__(self):
@@ -71,8 +76,8 @@ class BetweenPredicate:
 
 class UpdateElement:
     def __init__(self):
-        self.left = None
-        self.right = None
+        self.column = None
+        self.value = None
         pass
 
 
@@ -117,6 +122,13 @@ class Constant(PredicateAtom):
         super(Constant, self).__init__()
 
 
+class FunctionCall(PredicateAtom):
+    def __init__(self):
+        super(FunctionCall, self).__init__()
+        self.function_name = None
+        self.args_list = None
+
+
 class ParameterMarker(Constant):
     def __init__(self, index, value):
         self.index = index
@@ -148,9 +160,19 @@ class RealLiteral(Constant):
         self.value = float(value)
 
 
+class NullLiteral(Constant):
+    def __init__(self):
+        self.value = None
+
+
 class BitString(Constant):
     def __init__(self, value):
         self.value = value
+
+
+class Default:
+    def __init__(self):
+        self.value = 'DEFAULT'
 
 
 class SelectStatement:
@@ -237,7 +259,8 @@ class MysqlStatementVisitor(MySqlBaseParserVisitor):
         ins = InsertStatement()
         ins.ignore = ctx.IGNORE() is not None
         ins.tableSource = self.visit(ctx.tableSource())
-        ins.columns = self.visit(ctx.uidList())
+        if ctx.uidList() is not None:
+            ins.columns = self.visit(ctx.uidList())
         ins.value_list = self.visit(ctx.insertStatementValue())
         return ins
 
@@ -343,11 +366,11 @@ class MysqlStatementVisitor(MySqlBaseParserVisitor):
     def visitUpdatedElement(self, ctx: MySqlBaseParser.UpdatedElementContext):
         log('visitUpdatedElement')
         ue = UpdateElement()
-        ue.left = self.visit(ctx.fullColumnName())
+        ue.column = self.visit(ctx.fullColumnName())
         if ctx.DEFAULT() is not None:
-            ue.right = 'DEFAULT'
+            ue.value = Default()
         else:
-            ue.right = self.visit(ctx.expression())
+            ue.value = self.visit(ctx.expression())
         return ue
 
     def visitWhereClause(self, ctx: MySqlBaseParser.WhereClauseContext):
@@ -425,8 +448,49 @@ class MysqlStatementVisitor(MySqlBaseParserVisitor):
         log('visitPredicate')
         if ctx.fullColumnName() is not None:
             return self.visit(ctx.fullColumnName())
-        else:
+        elif ctx.constant() is not None:
             return self.visit(ctx.constant())
+        elif ctx.functionCall() is not None:
+            return self.visit(ctx.functionCall())
+
+    def visitSpecificFunctionCall(self, ctx: MySqlBaseParser.SpecificFunctionCallContext):
+        log('visitSpecificFunctionCall')
+        return self.visit(ctx.specificFunction())
+
+    def visitSimpleFunctionCall(self, ctx: MySqlBaseParser.SimpleFunctionCallContext):
+        log('visitSpecificFunctionCall')
+        fc = FunctionCall()
+        fc.function_name = ctx.getText().replace('(', '').replace(')')
+        return fc
+
+    def visitScalarFunctionCall(self, ctx: MySqlBaseParser.ScalarFunctionCallContext):
+        log('visitScalarFunctionCall')
+        fc = FunctionCall()
+        fc.function_name = self.visit(ctx.scalarFunctionName())
+        if ctx.functionArgs() is not None:
+            fc.args_list = self.visit(ctx.functionArgs())
+        return fc
+
+    def visitScalarFunctionName(self, ctx: MySqlBaseParser.ScalarFunctionNameContext):
+        log('visitScalarFunctionCall')
+        return ctx.getText()
+
+    def visitFunctionArgs(self, ctx: MySqlBaseParser.FunctionArgsContext):
+        log('visitFunctionArgs')
+        fas = ctx.functionArg()
+        args_list = []
+        for fa in fas:
+            args_list.append(self.visit(fa))
+        return args_list
+
+    def visitFunctionArg(self, ctx: MySqlBaseParser.FunctionArgContext):
+        log('visitFunctionArg')
+        if ctx.constant() is not None:
+            return self.visit(ctx.constant())
+        elif ctx.fullColumnName() is not None:
+            return self.visit(ctx.fullColumnName())
+        elif ctx.functionCall() is not None:
+            return self.visit(ctx.functionCall())
 
     def visitComparisonOperator(self, ctx: MySqlBaseParser.ComparisonOperatorContext):
         log('visitComparisonOperator')
@@ -456,6 +520,8 @@ class MysqlStatementVisitor(MySqlBaseParserVisitor):
             return self.visit(ctx.parameterMarker())
         elif ctx.hexadecimalLiteral() is not None:
             return self.visit(ctx.hexadecimalLiteral())
+        elif ctx.nullLiteral() is not None:
+            return self.visit(ctx.nullLiteral())
         else:
             print('constant unknown')
 
@@ -482,6 +548,10 @@ class MysqlStatementVisitor(MySqlBaseParserVisitor):
     def visitHexadecimalLiteral(self, ctx: MySqlBaseParser.HexadecimalLiteralContext):
         log('visitHexadecimalLiteral')
         return HexadecimalLiteral(ctx.getText())
+
+    def visitNullLiteral(self, ctx: MySqlBaseParser.NullLiteralContext):
+        log('visitNullLiteral')
+        return NullLiteral()
 
     def visitOrderByClause(self, ctx: MySqlBaseParser.OrderByClauseContext):
         log('visitOrderByClause')
@@ -535,16 +605,18 @@ class MysqlOutputVisitor:
 
     def visitSelectStatement(self, statement, output):
         if not isinstance(statement, SelectStatement):
-            raise TypeError('type error. ' + type(statement))
+            raise TypeError('select statement type error. ' + type(statement).__name__)
         if not isinstance(output, list):
-            raise TypeError('output_string type error. ' + type(output))
+            raise TypeError('select statement output type error. ' + type(output).__name__)
 
         output.append("SELECT")
         if len(statement.selectElements) == 0:
+            output.append(" ")
             output.append("*")
         else:
             for selectElement in statement.selectElements:
                 self.visitSelectElement(selectElement, output)
+        output.append(" ")
         output.append("FROM")
         self.visitTableSource(statement.tableSource, output)
 
@@ -558,21 +630,31 @@ class MysqlOutputVisitor:
             self.visitLock(statement.lock, output)
 
     def visitSelectElement(self, select_element, output):
+        if not isinstance(output, list):
+            raise TypeError('select_element output type error. ' + type(output).__name__)
         if isinstance(select_element, FullColumnName):
             self.visitFullColumnName(select_element, output)
         else:
+            output.append(" ")
             output.append(select_element)
 
     def visitWhere(self, where, output):
         if not isinstance(where, WhereClause):
-            raise TypeError()
+            raise TypeError("where type error. " + type(where).__name__)
+        if not isinstance(output, list):
+            raise TypeError('where output type error. ' + type(output).__name__)
+        output.append(" ")
         output.append("WHERE")
         self.visitExpression(where.expression, output)
 
     def visitOrderBy(self, order_by, output):
         if not isinstance(order_by, OrderByClause):
-            raise TypeError()
+            raise TypeError("order_by type error. " + type(order_by).__name__)
+        if not isinstance(output, list):
+            raise TypeError('order_by output type error. ' + type(output).__name__)
+        output.append(" ")
         output.append("ORDER")
+        output.append(" ")
         output.append("BY")
         for obe_idx, obe in enumerate(order_by.orderByExpressions):
             if obe_idx > 0:
@@ -581,8 +663,11 @@ class MysqlOutputVisitor:
 
     def visitOrderByExpression(self, order_by_expression, output):
         if not isinstance(order_by_expression, OrderByExpression):
-            raise TypeError()
+            raise TypeError("order_by_expression type error. " + type(order_by_expression).__name__)
+        if not isinstance(output, list):
+            raise TypeError('order_by_expression output type error. ' + type(output).__name__)
         self.visitExpression(order_by_expression.expression, output)
+        output.append(" ")
         if order_by_expression.ASC:
             output.append("ASC")
         else:
@@ -590,7 +675,10 @@ class MysqlOutputVisitor:
 
     def visitLimit(self, limit, output):
         if not isinstance(limit, LimitClause):
-            raise TypeError()
+            raise TypeError("limit type error. " + type(limit).__name__)
+        if not isinstance(output, list):
+            raise TypeError('limit output type error. ' + type(output).__name__)
+        output.append(" ")
         output.append("LIMIT")
         if limit.offset is not None:
             self.visitConstant(limit.offset, output)
@@ -599,8 +687,11 @@ class MysqlOutputVisitor:
 
     def visitLock(self, lock, output):
         if not isinstance(lock, LockClause):
-            raise TypeError()
+            raise TypeError("lock type error. " + type(lock).__name__)
+        if not isinstance(output, list):
+            raise TypeError('lock output type error. ' + type(output).__name__)
 
+        output.append(" ")
         if lock.forUpdate:
             output.append("FOR UPDATE")
         else:
@@ -608,12 +699,14 @@ class MysqlOutputVisitor:
 
     def visitInsertStatement(self, statement, output):
         if not isinstance(statement, InsertStatement):
-            raise TypeError('statement type error. ' + type(statement))
+            raise TypeError('insert statement type error. ' + type(statement).__name__)
         if not isinstance(output, list):
-            raise TypeError('output type error. ' + type(output))
+            raise TypeError('insert statement output type error. ' + type(output).__name__)
         output.append('INSERT')
         if statement.ignore:
+            output.append(" ")
             output.append('IGNORE')
+        output.append(" ")
         output.append('INTO')
         self.visitTableSource(statement.tableSource, output)
         self.visitColumns(statement.columns, output)
@@ -621,12 +714,13 @@ class MysqlOutputVisitor:
 
     def visitUpdateStatement(self, statement, output):
         if not isinstance(statement, UpdateStatement):
-            raise TypeError('type error. ' + type(statement))
+            raise TypeError('update statement type error. ' + type(statement).__name__)
         if not isinstance(output, list):
-            raise TypeError('output_string type error. ' + type(output))
+            raise TypeError('update statement output type error. ' + type(output).__name__)
 
         output.append("UPDATE")
         self.visitTableSource(statement.tableSource, output)
+        output.append(" ")
         output.append("SET")
         for ele_idx, ele in enumerate(statement.updatedElement):
             if ele_idx > 0:
@@ -641,22 +735,28 @@ class MysqlOutputVisitor:
 
     def visitUpdatedElement(self, updated_element, output):
         if not isinstance(updated_element, UpdateElement):
-            raise TypeError()
-        self.visitFullColumnName(updated_element.left, output)
+            raise TypeError("updated_element type error. " + type(updated_element).__name__)
+        if not isinstance(output, list):
+            raise TypeError('updated_element output type error. ' + type(output).__name__)
+        self.visitFullColumnName(updated_element.column, output)
+        output.append(" ")
         output.append("=")
-        if isinstance(updated_element.right, str):
-            output.append(updated_element.right)
+        if isinstance(updated_element.value, str):
+            output.append(" ")
+            output.append(updated_element.value)
         else:
-            self.visitExpression(updated_element.right, output)
+            self.visitExpression(updated_element.value, output)
 
     def visitDeleteStatement(self, statement, output):
         if not isinstance(statement, DeleteStatement):
-            raise TypeError('type error. ' + type(statement))
+            raise TypeError('delete statement type error. ' + type(statement).__name__)
         if not isinstance(output, list):
-            raise TypeError('output_string type error. ' + type(output))
+            raise TypeError('delete statement output type error. ' + type(output).__name__)
         output.append("DELETE")
         if statement.tableAlias is not None:
+            output.append(" ")
             output.append(statement.tableAlias)
+        output.append(" ")
         output.append("FROM")
         self.visitTableSource(statement.tableSource, output)
         if statement.where is not None:
@@ -664,36 +764,43 @@ class MysqlOutputVisitor:
         if statement.orderBy is not None:
             self.visitOrderBy(statement.orderBy, output)
         if statement.limit is not None:
+            output.append(" ")
             output.append("LIMIT")
             self.visitConstant(statement.limit, output)
 
-    def visitTableSource(self, statement, output):
-        if not isinstance(statement, TableSource):
-            raise TypeError('statement type error. ' + type(statement))
+    def visitTableSource(self, table_source, output):
+        if not isinstance(table_source, TableSource):
+            raise TypeError('table_source type error. ' + type(table_source).__name__)
         if not isinstance(output, list):
-            raise TypeError('output type error. ' + type(output))
-        output.append(statement.tableName)
-        if statement.tableAlias is not None:
-            output.append(statement.tableAlias)
+            raise TypeError('table_source output type error. ' + type(output).__name__)
+        output.append(" ")
+        output.append(table_source.tableName)
+        if table_source.tableAlias is not None:
+            output.append(" ")
+            output.append(table_source.tableAlias)
 
     def visitColumns(self, columns, output):
         if not isinstance(output, list):
-            raise TypeError('output type error. ' + type(output))
-        if len(columns) > 0:
+            raise TypeError('columns output type error. ' + type(output).__name__)
+        if columns is not None and len(columns) > 0:
+            output.append(" ")
             output.append("(")
             for col_idx, col in enumerate(columns):
                 if col_idx > 0:
                     output.append(',')
+                output.append(" ")
                 output.append(col)
             output.append(")")
 
     def visitValueList(self, value_list, output):
         if not isinstance(output, list):
-            raise TypeError('output type error. ' + type(output))
+            raise TypeError('value_list output type error. ' + type(output).__name__)
+        output.append(" ")
         output.append('VALUES')
         for exprs_idx, expressions in enumerate(value_list):
             if exprs_idx > 0:
                 output.append(",")
+            output.append(" ")
             output.append("(")
             for expr_idx, expression in enumerate(expressions):
                 if expr_idx > 0:
@@ -708,40 +815,55 @@ class MysqlOutputVisitor:
         if isinstance(predicate, InPredicate):
             self.visitPredicate(predicate.predicate, output)
             if predicate.NOT:
+                output.append(" ")
                 output.append('NOT')
+            output.append(" ")
             output.append("IN")
+            output.append(" ")
             output.append('(')
             self.visitExpressions(predicate.expressions, output)
+            output.append(" ")
             output.append(")")
         elif isinstance(predicate, ComparisonPredicate):
             self.visitPredicate(predicate.predicate1, output)
+            output.append(" ")
             output.append(predicate.comparisonOperator)
             self.visitPredicate(predicate.predicate2, output)
         elif isinstance(predicate, NullPredicate):
             self.visitPredicate(predicate.predicate, output)
+            output.append(" ")
             output.append("IS")
             if predicate.NOT:
+                output.append(" ")
                 output.append("NOT")
+            output.append(" ")
             output.append("NULL")
         elif isinstance(predicate, BetweenPredicate):
             self.visitPredicate(predicate.predicate1, output)
             if predicate.NOT:
+                output.append(" ")
                 output.append("NOT")
+            output.append(" ")
             output.append("BETWEEN")
             self.visitPredicate(predicate.predicate2, output)
+            output.append(" ")
             output.append("AND")
             self.visitPredicate(predicate.predicate3, output)
         elif isinstance(predicate, LikePredicate):
             self.visitPredicate(predicate.predicate1, output)
             if predicate.NOT:
+                output.append(" ")
                 output.append("NOT")
+            output.append(" ")
             output.append("LIKE")
             self.visitPredicate(predicate.predicate2, output)
         elif isinstance(predicate, NotExpression):
+            output.append(" ")
             output.append("NOT")
             self.visitExpression(predicate.expression, output)
         elif isinstance(predicate, LogicalExpression):
             self.visitExpression(predicate.expression1, output)
+            output.append(" ")
             output.append(predicate.logicalOperator.upper())
             self.visitExpression(predicate.expression2, output)
         elif isinstance(predicate, PredicateAtom):
@@ -749,6 +871,8 @@ class MysqlOutputVisitor:
                 self.visitFullColumnName(predicate, output)
             elif isinstance(predicate, Constant):
                 self.visitConstant(predicate, output)
+            elif isinstance(predicate, FunctionCall):
+                self.visitFunctionCall(predicate, output)
             else:
                 print('predicate atom unknown')
         else:
@@ -761,12 +885,14 @@ class MysqlOutputVisitor:
             self.visitExpression(expression, output)
 
     def visitFullColumnName(self, predicate, output):
+        output.append(" ")
         if predicate.owner is not None:
             output.append(predicate.owner + predicate.value)
         else:
             output.append(predicate.value)
 
     def visitConstant(self, val, output):
+        output.append(" ")
         if isinstance(val, BitString):
             output.append(str(val.value))
         elif isinstance(val, RealLiteral):
@@ -781,8 +907,30 @@ class MysqlOutputVisitor:
             output.append('\'' + val.value + '\'')
         elif isinstance(val, HexadecimalLiteral):
             output.append(str(val.value))
+        elif isinstance(val, NullLiteral):
+            output.append('NULL')
         else:
-            print('output constant unknown, ' + type(val))
+            print('constant unknown, ' + type(val).__name__)
 
     def visitParameterMarker(self, parameter_marker, output):
         output.append(parameter_marker.value)
+
+    def visitFunctionCall(self, function_call, output):
+        if not isinstance(function_call, FunctionCall):
+            raise TypeError('function_call type error. ' + type(function_call).__name__)
+        if not isinstance(output, list):
+            raise TypeError('function_call output type error. ' + type(output).__name__)
+        output.append(" ")
+        output.append(function_call.function_name)
+        output.append("(")
+        if function_call.args_list is not None:
+            for arg_idx, arg in enumerate(function_call.args_list):
+                if arg_idx > 0:
+                    output.append(",")
+                if isinstance(arg, Constant):
+                    self.visitConstant(arg, output)
+                elif isinstance(arg, FullColumnName):
+                    self.visitConstant(arg, output)
+                elif isinstance(arg, FunctionCall):
+                    self.visitFunctionCall(arg, output)
+        output.append(")")
