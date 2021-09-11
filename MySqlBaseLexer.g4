@@ -40,6 +40,7 @@ fragment UL_: '_';
 
 QUESTION_:                           '?';
 PERCENT_S_:                          '%' 's';
+PERCENT_NAME_:                       '%(' VAR_NAME ')s';
 
 // Operators
 // Operators. Assigns
@@ -1229,6 +1230,7 @@ fragment BQUOTA_STRING:              '`' ( '\\'. | '``' | ~('`'|'\\'))* '`';
 fragment HEX_DIGIT:                  [0-9A-F];
 fragment DEC_DIGIT:                  [0-9];
 fragment BIT_STRING_L:               B '\'' [01]+ '\'';
+fragment VAR_NAME:                   [a-zA-Z0-9_]+;
 
 
 

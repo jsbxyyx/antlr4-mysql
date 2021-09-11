@@ -64,4 +64,16 @@ if __name__ == '__main__':
         print(string)
         print('*' * 100)
 
+    sql = """
+    insert into test values(%(user_id)s, %(count)s);
+    """
+    ss = MySqlBase.parserSQLStatement(sql)
+    for idx in range(len(ss)):
+        s = MysqlStatementVisitor().visit(ss[idx])
+        output = list()
+        MysqlOutputVisitor().visitInsertStatement(s, output)
+        string = ''.join(output)
+        print(string)
+        print('*' * 100)
+
     print()

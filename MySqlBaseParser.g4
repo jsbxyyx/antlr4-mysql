@@ -378,5 +378,6 @@ lockClause
 parameterMarker
 	: QUESTION_
 	| PERCENT_S_
+	| PERCENT_NAME_
 	;
 
