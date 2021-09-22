@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding:utf-8 -*-
 # @author jsbxyyx
-# @since 1.0
 
 # https://github.com/jsbxyyx/antlr4-mysql
 
 from antlr4 import *
 
-from autogen.MySqlBaseLexer import MySqlBaseLexer
-from autogen.MySqlBaseParser import MySqlBaseParser
-from autogen.MySqlBaseParserVisitor import MySqlBaseParserVisitor
+from .autogen.MySqlBaseLexer import MySqlBaseLexer
+from .autogen.MySqlBaseParser import MySqlBaseParser
+from .autogen.MySqlBaseParserVisitor import MySqlBaseParserVisitor
 
 debug = False
 
