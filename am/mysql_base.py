@@ -4,7 +4,7 @@
 
 # https://github.com/jsbxyyx/antlr4-mysql
 
-from antlr4 import *
+from antlr4 import InputStream, CommonTokenStream
 
 from .autogen.MySqlBaseLexer import MySqlBaseLexer
 from .autogen.MySqlBaseParser import MySqlBaseParser
@@ -28,7 +28,7 @@ class MySqlBase:
         return parser
 
     @classmethod
-    def parserSQLStatement(cls, sql):
+    def parser_sql_statement(cls, sql):
         parser = cls.parser(sql)
         return parser.sqlStatements().sqlStatement()
 
@@ -154,7 +154,13 @@ class HexadecimalLiteral(Constant):
 
 class BooleanLiteral(Constant):
     def __init__(self, value):
-        self.value = bool(value)
+        val = value.lower()
+        if val == 'true':
+            self.value = True
+        elif val == 'false':
+            self.value = False
+        else:
+            raise ValueError('[' + value + '] lower is true/false')
 
 
 class RealLiteral(Constant):
@@ -241,7 +247,9 @@ class MysqlStatementVisitor(MySqlBaseParserVisitor):
     def __init__(self):
         self.parameter_marker_index = -1
 
-    def visitSelectStatement(self, ctx: MySqlBaseParser.SelectStatementContext):
+    def visitSelectStatement(
+            self,
+            ctx: MySqlBaseParser.SelectStatementContext):
         log('visitSelectStatement')
         ss = SelectStatement()
         ss.selectElements = self.visit(ctx.selectElements())
@@ -256,7 +264,9 @@ class MysqlStatementVisitor(MySqlBaseParserVisitor):
             ss.lock = self.visit(ctx.lockClause())
         return ss
 
-    def visitInsertStatement(self, ctx: MySqlBaseParser.InsertStatementContext):
+    def visitInsertStatement(
+            self,
+            ctx: MySqlBaseParser.InsertStatementContext):
         log('visitInsertStatement')
         ins = InsertStatement()
         ins.ignore = ctx.IGNORE() is not None
@@ -266,7 +276,9 @@ class MysqlStatementVisitor(MySqlBaseParserVisitor):
         ins.value_list = self.visit(ctx.insertStatementValue())
         return ins
 
-    def visitUpdateStatement(self, ctx: MySqlBaseParser.UpdateStatementContext):
+    def visitUpdateStatement(
+            self,
+            ctx: MySqlBaseParser.UpdateStatementContext):
         log('visitUpdateStatement')
         us = UpdateStatement()
         us.tableSource = self.visit(ctx.tableSource())
@@ -283,7 +295,9 @@ class MysqlStatementVisitor(MySqlBaseParserVisitor):
             us.limit = self.visit(ctx.limitClause())
         return us
 
-    def visitDeleteStatement(self, ctx: MySqlBaseParser.DeleteStatementContext):
+    def visitDeleteStatement(
+            self,
+            ctx: MySqlBaseParser.DeleteStatementContext):
         log('visitDeleteStatement')
         ds = DeleteStatement()
         if ctx.tableAlias() is not None:
@@ -296,7 +310,8 @@ class MysqlStatementVisitor(MySqlBaseParserVisitor):
             ds.limit = self.visit(ctx.decimalLiteral())
         return ds
 
-    def visitInsertStatementValue(self, ctx: MySqlBaseParser.InsertStatementValueContext):
+    def visitInsertStatementValue(
+            self, ctx: MySqlBaseParser.InsertStatementValueContext):
         log('visitInsertStatementValue')
         values = []
         eps = ctx.expressions()
@@ -312,11 +327,13 @@ class MysqlStatementVisitor(MySqlBaseParserVisitor):
             elements.append(self.visit(ses[i]))
         return elements
 
-    def visitSelectStarElement(self, ctx: MySqlBaseParser.SelectStarElementContext):
+    def visitSelectStarElement(
+            self, ctx: MySqlBaseParser.SelectStarElementContext):
         log('visitSelectStarElement')
         return ctx.getText()
 
-    def visitSelectColumnElement(self, ctx: MySqlBaseParser.SelectColumnElementContext):
+    def visitSelectColumnElement(
+            self, ctx: MySqlBaseParser.SelectColumnElementContext):
         log('visitSelectColumnElement')
         return self.visit(ctx.fullColumnName())
 
@@ -389,7 +406,8 @@ class MysqlStatementVisitor(MySqlBaseParserVisitor):
             expressions.append(self.visit(eps[i]))
         return expressions
 
-    def visitComparisonPredicate(self, ctx: MySqlBaseParser.ComparisonPredicateContext):
+    def visitComparisonPredicate(
+            self, ctx: MySqlBaseParser.ComparisonPredicateContext):
         log('visitComparisonPredicate')
         cp = ComparisonPredicate()
         cp.predicate1 = self.visit(ctx.predicate(0))
@@ -405,10 +423,13 @@ class MysqlStatementVisitor(MySqlBaseParserVisitor):
         ip.expressions = self.visit(ctx.expressions())
         return ip
 
-    def visitExpressionAtomPredicate(self, ctx: MySqlBaseParser.ExpressionAtomPredicateContext):
+    def visitExpressionAtomPredicate(
+            self, ctx: MySqlBaseParser.ExpressionAtomPredicateContext):
         return self.visit(ctx.predicate())
 
-    def visitBetweenPredicate(self, ctx: MySqlBaseParser.BetweenPredicateContext):
+    def visitBetweenPredicate(
+            self,
+            ctx: MySqlBaseParser.BetweenPredicateContext):
         log('visitBetweenPredicate')
         bp = BetweenPredicate()
         bp.predicate1 = self.visit(ctx.predicate(0))
@@ -423,7 +444,8 @@ class MysqlStatementVisitor(MySqlBaseParserVisitor):
         np.expression = self.visit(ctx.expression())
         return np
 
-    def visitLogicalExpression(self, ctx: MySqlBaseParser.LogicalExpressionContext):
+    def visitLogicalExpression(
+            self, ctx: MySqlBaseParser.LogicalExpressionContext):
         log('visitLogicalExpression')
         lp = LogicalExpression()
         lp.expression1 = self.visit(ctx.expression(0))
@@ -455,17 +477,20 @@ class MysqlStatementVisitor(MySqlBaseParserVisitor):
         elif ctx.functionCall() is not None:
             return self.visit(ctx.functionCall())
 
-    def visitSpecificFunctionCall(self, ctx: MySqlBaseParser.SpecificFunctionCallContext):
+    def visitSpecificFunctionCall(
+            self, ctx: MySqlBaseParser.SpecificFunctionCallContext):
         log('visitSpecificFunctionCall')
         return self.visit(ctx.specificFunction())
 
-    def visitSimpleFunctionCall(self, ctx: MySqlBaseParser.SimpleFunctionCallContext):
+    def visitSimpleFunctionCall(
+            self, ctx: MySqlBaseParser.SimpleFunctionCallContext):
         log('visitSpecificFunctionCall')
         fc = FunctionCall()
         fc.function_name = ctx.getText().replace('(', '').replace(')')
         return fc
 
-    def visitScalarFunctionCall(self, ctx: MySqlBaseParser.ScalarFunctionCallContext):
+    def visitScalarFunctionCall(
+            self, ctx: MySqlBaseParser.ScalarFunctionCallContext):
         log('visitScalarFunctionCall')
         fc = FunctionCall()
         fc.function_name = self.visit(ctx.scalarFunctionName())
@@ -473,7 +498,8 @@ class MysqlStatementVisitor(MySqlBaseParserVisitor):
             fc.args_list = self.visit(ctx.functionArgs())
         return fc
 
-    def visitScalarFunctionName(self, ctx: MySqlBaseParser.ScalarFunctionNameContext):
+    def visitScalarFunctionName(
+            self, ctx: MySqlBaseParser.ScalarFunctionNameContext):
         log('visitScalarFunctionCall')
         return ctx.getText()
 
@@ -494,15 +520,20 @@ class MysqlStatementVisitor(MySqlBaseParserVisitor):
         elif ctx.functionCall() is not None:
             return self.visit(ctx.functionCall())
 
-    def visitComparisonOperator(self, ctx: MySqlBaseParser.ComparisonOperatorContext):
+    def visitComparisonOperator(
+            self, ctx: MySqlBaseParser.ComparisonOperatorContext):
         log('visitComparisonOperator')
         return ctx.getText()
 
-    def visitLogicalOperator(self, ctx: MySqlBaseParser.LogicalOperatorContext):
+    def visitLogicalOperator(
+            self,
+            ctx: MySqlBaseParser.LogicalOperatorContext):
         log('visitLogicalOperator')
         return ctx.getText()
 
-    def visitKeywordsCanBeId(self, ctx: MySqlBaseParser.KeywordsCanBeIdContext):
+    def visitKeywordsCanBeId(
+            self,
+            ctx: MySqlBaseParser.KeywordsCanBeIdContext):
         log('visitKeywordsCanBeId')
         return ctx.getText()
 
@@ -547,7 +578,8 @@ class MysqlStatementVisitor(MySqlBaseParserVisitor):
         log('visitDecimalLiteral')
         return DecimalLiteral(ctx.getText())
 
-    def visitHexadecimalLiteral(self, ctx: MySqlBaseParser.HexadecimalLiteralContext):
+    def visitHexadecimalLiteral(
+            self, ctx: MySqlBaseParser.HexadecimalLiteralContext):
         log('visitHexadecimalLiteral')
         return HexadecimalLiteral(ctx.getText())
 
@@ -565,7 +597,8 @@ class MysqlStatementVisitor(MySqlBaseParserVisitor):
         obc.orderByExpressions = order_by_exprs
         return obc
 
-    def visitOrderByExpression(self, ctx: MySqlBaseParser.OrderByExpressionContext):
+    def visitOrderByExpression(
+            self, ctx: MySqlBaseParser.OrderByExpressionContext):
         log('visitOrderByExpression')
         obe = OrderByExpression()
         obe.expression = self.visit(ctx.expression())
@@ -596,7 +629,9 @@ class MysqlStatementVisitor(MySqlBaseParserVisitor):
             lc.forUpdate = False
         return lc
 
-    def visitParameterMarker(self, ctx: MySqlBaseParser.ParameterMarkerContext):
+    def visitParameterMarker(
+            self,
+            ctx: MySqlBaseParser.ParameterMarkerContext):
         log('visitParameterMarker')
         self.parameter_marker_index += 1
         name = None
@@ -610,9 +645,13 @@ class MysqlOutputVisitor:
 
     def visitSelectStatement(self, statement, output):
         if not isinstance(statement, SelectStatement):
-            raise TypeError('select statement type error. ' + type(statement).__name__)
+            raise TypeError(
+                'select statement type error. ' +
+                type(statement).__name__)
         if not isinstance(output, list):
-            raise TypeError('select statement output type error. ' + type(output).__name__)
+            raise TypeError(
+                'select statement output type error. ' +
+                type(output).__name__)
 
         output.append("SELECT")
         if len(statement.selectElements) == 0:
@@ -636,7 +675,9 @@ class MysqlOutputVisitor:
 
     def visitSelectElement(self, select_element, output):
         if not isinstance(output, list):
-            raise TypeError('select_element output type error. ' + type(output).__name__)
+            raise TypeError(
+                'select_element output type error. ' +
+                type(output).__name__)
         if isinstance(select_element, FullColumnName):
             self.visitFullColumnName(select_element, output)
         else:
@@ -647,7 +688,9 @@ class MysqlOutputVisitor:
         if not isinstance(where, WhereClause):
             raise TypeError("where type error. " + type(where).__name__)
         if not isinstance(output, list):
-            raise TypeError('where output type error. ' + type(output).__name__)
+            raise TypeError(
+                'where output type error. ' +
+                type(output).__name__)
         output.append(" ")
         output.append("WHERE")
         self.visitExpression(where.expression, output)
@@ -656,7 +699,9 @@ class MysqlOutputVisitor:
         if not isinstance(order_by, OrderByClause):
             raise TypeError("order_by type error. " + type(order_by).__name__)
         if not isinstance(output, list):
-            raise TypeError('order_by output type error. ' + type(output).__name__)
+            raise TypeError(
+                'order_by output type error. ' +
+                type(output).__name__)
         output.append(" ")
         output.append("ORDER")
         output.append(" ")
@@ -668,9 +713,13 @@ class MysqlOutputVisitor:
 
     def visitOrderByExpression(self, order_by_expression, output):
         if not isinstance(order_by_expression, OrderByExpression):
-            raise TypeError("order_by_expression type error. " + type(order_by_expression).__name__)
+            raise TypeError(
+                "order_by_expression type error. " +
+                type(order_by_expression).__name__)
         if not isinstance(output, list):
-            raise TypeError('order_by_expression output type error. ' + type(output).__name__)
+            raise TypeError(
+                'order_by_expression output type error. ' +
+                type(output).__name__)
         self.visitExpression(order_by_expression.expression, output)
         output.append(" ")
         if order_by_expression.ASC:
@@ -682,7 +731,9 @@ class MysqlOutputVisitor:
         if not isinstance(limit, LimitClause):
             raise TypeError("limit type error. " + type(limit).__name__)
         if not isinstance(output, list):
-            raise TypeError('limit output type error. ' + type(output).__name__)
+            raise TypeError(
+                'limit output type error. ' +
+                type(output).__name__)
         output.append(" ")
         output.append("LIMIT")
         if limit.offset is not None:
@@ -704,9 +755,13 @@ class MysqlOutputVisitor:
 
     def visitInsertStatement(self, statement, output):
         if not isinstance(statement, InsertStatement):
-            raise TypeError('insert statement type error. ' + type(statement).__name__)
+            raise TypeError(
+                'insert statement type error. ' +
+                type(statement).__name__)
         if not isinstance(output, list):
-            raise TypeError('insert statement output type error. ' + type(output).__name__)
+            raise TypeError(
+                'insert statement output type error. ' +
+                type(output).__name__)
         output.append('INSERT')
         if statement.ignore:
             output.append(" ")
@@ -719,9 +774,13 @@ class MysqlOutputVisitor:
 
     def visitUpdateStatement(self, statement, output):
         if not isinstance(statement, UpdateStatement):
-            raise TypeError('update statement type error. ' + type(statement).__name__)
+            raise TypeError(
+                'update statement type error. ' +
+                type(statement).__name__)
         if not isinstance(output, list):
-            raise TypeError('update statement output type error. ' + type(output).__name__)
+            raise TypeError(
+                'update statement output type error. ' +
+                type(output).__name__)
 
         output.append("UPDATE")
         self.visitTableSource(statement.tableSource, output)
@@ -740,9 +799,13 @@ class MysqlOutputVisitor:
 
     def visitUpdatedElement(self, updated_element, output):
         if not isinstance(updated_element, UpdateElement):
-            raise TypeError("updated_element type error. " + type(updated_element).__name__)
+            raise TypeError(
+                "updated_element type error. " +
+                type(updated_element).__name__)
         if not isinstance(output, list):
-            raise TypeError('updated_element output type error. ' + type(output).__name__)
+            raise TypeError(
+                'updated_element output type error. ' +
+                type(output).__name__)
         self.visitFullColumnName(updated_element.column, output)
         output.append(" ")
         output.append("=")
@@ -754,9 +817,13 @@ class MysqlOutputVisitor:
 
     def visitDeleteStatement(self, statement, output):
         if not isinstance(statement, DeleteStatement):
-            raise TypeError('delete statement type error. ' + type(statement).__name__)
+            raise TypeError(
+                'delete statement type error. ' +
+                type(statement).__name__)
         if not isinstance(output, list):
-            raise TypeError('delete statement output type error. ' + type(output).__name__)
+            raise TypeError(
+                'delete statement output type error. ' +
+                type(output).__name__)
         output.append("DELETE")
         if statement.tableAlias is not None:
             output.append(" ")
@@ -775,9 +842,13 @@ class MysqlOutputVisitor:
 
     def visitTableSource(self, table_source, output):
         if not isinstance(table_source, TableSource):
-            raise TypeError('table_source type error. ' + type(table_source).__name__)
+            raise TypeError(
+                'table_source type error. ' +
+                type(table_source).__name__)
         if not isinstance(output, list):
-            raise TypeError('table_source output type error. ' + type(output).__name__)
+            raise TypeError(
+                'table_source output type error. ' +
+                type(output).__name__)
         output.append(" ")
         output.append(table_source.tableName)
         if table_source.tableAlias is not None:
@@ -786,7 +857,9 @@ class MysqlOutputVisitor:
 
     def visitColumns(self, columns, output):
         if not isinstance(output, list):
-            raise TypeError('columns output type error. ' + type(output).__name__)
+            raise TypeError(
+                'columns output type error. ' +
+                type(output).__name__)
         if columns is not None and len(columns) > 0:
             output.append(" ")
             output.append("(")
@@ -799,7 +872,9 @@ class MysqlOutputVisitor:
 
     def visitValueList(self, value_list, output):
         if not isinstance(output, list):
-            raise TypeError('value_list output type error. ' + type(output).__name__)
+            raise TypeError(
+                'value_list output type error. ' +
+                type(output).__name__)
         output.append(" ")
         output.append('VALUES')
         for exprs_idx, expressions in enumerate(value_list):
@@ -922,9 +997,13 @@ class MysqlOutputVisitor:
 
     def visitFunctionCall(self, function_call, output):
         if not isinstance(function_call, FunctionCall):
-            raise TypeError('function_call type error. ' + type(function_call).__name__)
+            raise TypeError(
+                'function_call type error. ' +
+                type(function_call).__name__)
         if not isinstance(output, list):
-            raise TypeError('function_call output type error. ' + type(output).__name__)
+            raise TypeError(
+                'function_call output type error. ' +
+                type(output).__name__)
         output.append(" ")
         output.append(function_call.function_name)
         output.append("(")

@@ -12,7 +12,7 @@ def test_sql():
         select * from test where name = ? and id = ?;
         select * from test where name = ? and id = ? order by t.id asc, t.name desc limit 10, 0 for update;
         """
-    ss = MySqlBase.parserSQLStatement(select_sql)
+    ss = MySqlBase.parser_sql_statement(select_sql)
     for idx in range(len(ss)):
         s = MysqlStatementVisitor().visit(ss[idx])
         output = list()
@@ -26,7 +26,7 @@ def test_sql():
         insert into test(id, name) values(?,now());
         insert into test(id, name) values(null,now());
         """
-    ss = MySqlBase.parserSQLStatement(insert_sql)
+    ss = MySqlBase.parser_sql_statement(insert_sql)
     for idx in range(len(ss)):
         s = MysqlStatementVisitor().visit(ss[idx])
         output = list()
@@ -40,7 +40,7 @@ def test_sql():
         update test t set t.id = ?, name = ? where t.id in (?,?) and t.id is null;
         update test t set t.id = ?, name = ? where t.id in (?,?) and t.like like '%1%' order by t.id, t.name desc limit 1;
         """
-    ss = MySqlBase.parserSQLStatement(update_sql)
+    ss = MySqlBase.parser_sql_statement(update_sql)
     for idx in range(len(ss)):
         s = MysqlStatementVisitor().visit(ss[idx])
         output = list()
@@ -56,7 +56,7 @@ def test_sql():
         delete t from test t where t.name = 0x1 and t.name = x'11' and t.name = b'1' order by t1.name desc limit 1;
         delete t from test t where t.name = format(1.23, 1) and t.created = date_format( now(), '%Y%m%d');
         """
-    ss = MySqlBase.parserSQLStatement(delete_sql)
+    ss = MySqlBase.parser_sql_statement(delete_sql)
     for idx in range(len(ss)):
         s = MysqlStatementVisitor().visit(ss[idx])
         output = list()
@@ -68,7 +68,7 @@ def test_sql():
     sql = """
         insert into test values(%(user_id)s, %(count)s);
         """
-    ss = MySqlBase.parserSQLStatement(sql)
+    ss = MySqlBase.parser_sql_statement(sql)
     for idx in range(len(ss)):
         s = MysqlStatementVisitor().visit(ss[idx])
         output = list()

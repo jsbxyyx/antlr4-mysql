@@ -144,3 +144,6 @@ autogen/
 gen/
 *.tokens
 *.interp
+
+# vscode
+.vscode/
